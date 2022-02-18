@@ -1,0 +1,128 @@
+library(tidyverse)
+library(readxl)
+library(here)
+library(summarytools)
+library(car)
+library(effectsize)
+library(rstatix)
+library(ggpubr)
+library(pgirmess)
+options(scipen = 999)
+
+##Load datafromes#
+neuropsych_df <- here::here("neuropsych_cleaned.csv") %>% readr::read_csv()
+relative_neuropsych <- subset(neuropsych_df, neuropsych_df$group == "relative")
+control_neuropsych <- subset(neuropsych_df, neuropsych_df$group == "control")
+c9pos_neuropsych <- subset(neuropsych_df, c9_status_3 == "Positive")
+c9neg_neuropsych <- subset(neuropsych_df, c9_status_3 == "Negative")
+
+## Compare relatives and controls on wasi test ## 
+wasi_test1 <- t.test(wasi_vc_t ~ group, data = neuropsych_df)
+wasi_test2 <- t.test(wasi_mr_t ~ group, data = neuropsych_df)
+wasi_test3 <- t.test(wasi_fsiq_2 ~ group, data = neuropsych_df)
+
+effectsize(wasi_test1)
+effectsize(wasi_test2)
+effectsize(wasi_test3)
+
+##test assumptions##
+by(neuropsych_df$wasi_vc_t, neuropsych_df$group, hist) #Good
+qplot(sample = relative_neuropsych$wasi_vc_t, stat="qq") #Good
+qplot(sample = control_neuropsych$wasi_vc_t, stat="qq") #Good
+
+
+by(neuropsych_df$wasi_mr_t, neuropsych_df$group, hist) #Good#
+qplot(sample = relative_neuropsych$wasi_mr_t, stat="qq") #Good
+qplot(sample = control_neuropsych$wasi_mr_t, stat="qq") #Good
+
+by(neuropsych_df$wasi_fsiq_2, neuropsych_df$group, hist) #Good
+qplot(sample = relative_neuropsych$wasi_fsiq_2, stat="qq") #Good
+qplot(sample = control_neuropsych$wasi_fsiq_2, stat="qq") #Good
+
+##Compare FALS and SALS to controls## 
+leveneTest(neuropsych_df$wasi_vc_t, neuropsych_df$familial_sporadic, center = median) 
+leveneTest(neuropsych_df$wasi_mr_t, neuropsych_df$familial_sporadic, center = median) 
+leveneTest(neuropsych_df$wasi_fsiq_2, neuropsych_df$familial_sporadic, center = median) 
+
+wasi_anova1 <-aov(wasi_vc_t ~ familial_sporadic, data = neuropsych_df)
+wasi_anova2 <-aov(wasi_mr_t ~ familial_sporadic, data = neuropsych_df)
+wasi_anova3 <-aov(wasi_fsiq_2 ~ familial_sporadic, data = neuropsych_df)
+
+summary(wasi_anova1)
+summary(wasi_anova2)
+summary(wasi_anova3)
+plot(wasi_anova1) # good
+plot(wasi_anova2) # 
+plot(wasi_anova3) # 
+
+omega_squared(wasi_anova1)
+omega_squared(wasi_anova2)
+omega_squared(wasi_anova3)
+
+##Post hoc comparisons for wasi
+wasi_post_hoc1 <- pairwise.t.test(neuropsych_df$wasi_vc_t, neuropsych_df$familial_sporadic, p.adjust.method =  "BH")
+wasi_post_hoc2 <- pairwise.t.test(neuropsych_df$wasi_fsiq_2, neuropsych_df$familial_sporadic, p.adjust.method =  "BH")
+
+
+#Make tibble of adjusted p-values
+stat.test_1 <- tibble::tribble(
+  ~group1, ~group2,   ~p.adj,
+  "Control",     "FALS", .027,
+  "Control",     "SALS", .237,
+  "FALS",     "SALS", .237)
+
+
+wasi_plot_1 <- ggboxplot(neuropsych_df, x = "familial_sporadic", y = "wasi_vc_t", fill = "familial_sporadic",width = .4) + 
+  stat_pvalue_manual(stat.test_1, y.position = 85, step.increase = 1, label = "p.adj", hide.ns = TRUE) +
+  labs(x = "Group", y = "WASI Vocabulary (t-score)") + theme_classic() +
+  theme(axis.title.x = element_text(vjust = 0, size = 14), axis.title.y = element_text(vjust = 2, size = 14)) +
+  theme(axis.text = element_text(size = 12),
+        axis.text.x = element_text()) + stat_compare_means(method = "anova", label.x = 2, label.y = 90) + theme(legend.position = "none") 
+
+wasi_plot_1 + geom_jitter(alpha = .25, width = .2) + geom_violin(aes(fill = familial_sporadic), size = 1, alpha = .2, adjust = 1)  
+
+
+#Make tibble of adjusted p-values
+stat.test_2 <- tibble::tribble(
+  ~group1, ~group2,   ~p.adj,
+  "Control",     "FALS", .021,
+  "Control",     "SALS", .061,
+  "FALS",     "SALS", .638)
+
+
+wasi_plot_2 <- ggboxplot(neuropsych_df, x = "familial_sporadic", y = "wasi_fsiq_2", fill = "familial_sporadic",width = .4) + 
+  stat_pvalue_manual(stat.test_2, y.position = 145, step.increase = 1, label = "p.adj", hide.ns = TRUE) +
+  labs(x = "Group", y = "WASI FSIQ-2") + theme_classic() +
+  theme(axis.title.x = element_text(vjust = 0, size = 14), axis.title.y = element_text(vjust = 2, size = 14)) +
+  theme(axis.text = element_text(size = 12),
+        axis.text.x = element_text()) + stat_compare_means(method = "anova", label.x = 2, label.y = 155) + theme(legend.position = "none") 
+
+wasi_plot_2 + geom_jitter(alpha = .25, width = .2) + geom_violin(aes(fill = familial_sporadic), size = 1, alpha = .2, adjust = 1)  
+
+
+
+wasi_plot_1 <- ggplot(neuropsych_df, aes(familial_sporadic, wasi_vc_t, fill = familial_sporadic))
+wasi_plot_1 + geom_boxplot(size = 1.2) + geom_point() + geom_jitter() + 
+  labs(x = "Group", y = "WASI-II Vocabulary (t-score)") + theme_classic()
+
+
+wasi_plot_2 <- ggplot(neuropsych_df, aes(familial_sporadic, wasi_fsiq_2, fill = familial_sporadic))
+wasi_plot_2 + geom_boxplot(size = 1.2) + geom_point() + geom_jitter() + 
+  labs(x = "Group", y = "WASI-II FSIQ-2 =") + theme_classic()
+
+##Compare c9 positive and negative##
+c9_wasi_test1 <- t.test(wasi_vc_t ~ c9_status_3, data = neuropsych_df)
+c9_wasi_test2 <- t.test(wasi_mr_t ~ c9_status_3, data = neuropsych_df)
+c9_wasi_test3 <- t.test(wasi_fsiq_2 ~ c9_status_3, data = neuropsych_df)
+
+by(neuropsych_df$wasi_vc_t, neuropsych_df$c9_status_3, hist) #Slight kurtosis in positive group
+qplot(sample = c9pos_neuropsych$wasi_vc_t, stat="qq") #good
+qplot(sample = c9neg_neuropsych$wasi_vc_t, stat="qq") #Good
+
+by(neuropsych_df$wasi_mr_t, neuropsych_df$c9_status_3, hist) #good
+qplot(sample = c9pos_neuropsych$wasi_mr_t, stat="qq") #good
+qplot(sample = c9neg_neuropsych$wasi_mr_t, stat="qq") #good
+
+by(neuropsych_df$wasi_fsiq_2, neuropsych_df$c9_status_3, hist) #good
+qplot(sample = c9pos_neuropsych$wasi_fsiq_2, stat="qq") #good
+qplot(sample = c9neg_neuropsych$wasi_fsiq_2, stat="qq") #good
