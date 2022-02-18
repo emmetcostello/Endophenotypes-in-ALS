@@ -1,0 +1,121 @@
+## Load packages and dataset
+library(tidyverse)
+library(readxl)
+library(here)
+library(summarytools)
+library(car)
+library(effectsize)
+library(rstatix)
+library(ggpubr)
+library(pgirmess)
+traits_df <- read_excel("traits_data.xlsx", sheet = "summary")
+
+## Remove patients
+traits_df <- subset(traits_df, group_1 != "Patient")
+traits_df <- subset(traits_df, group_2 != "NA")
+
+## Change age and education to numeric
+traits_df$age <- as.numeric(traits_df$age)
+traits_df$education <- as.numeric(traits_df$education)
+options(scipen = 999)
+
+## Create groups to check assumptions
+
+relative_df <- subset(traits_df, traits_df$group_1 == "Relative")
+control_df <- subset(traits_df, traits_df$group_1 == "Control")
+c9pos_df <- subset(traits_df, c9_status_2 == "Positive")
+c9neg_df <- subset(traits_df, c9_status_2 == "Negative")
+
+## Compare relatives and controls on PHQ-9 score 
+phq_test1 <- t.test(phq_total ~ group_1, data = traits_df)
+phq_wtest <- wilcox.test(phq_total ~ group_1, data = traits_df)
+effectsize(phq_test1)
+wilcox_effsize(traits_df, phq_total ~ group_1, paired = FALSE, ci = TRUE)
+
+##check assumptions
+by(traits_df$phq_total, traits_df$group_1, hist) #Stong positive skews
+qplot(sample = relative_df$phq_total, stat="qq") #Moderate kurtosis
+qplot(sample = control_df$phq_total, stat="qq") #Moderate kurtosis
+
+## Graph mean differences between relatives and controls 
+#Make tibble of adjusted p-values
+stat.test <- tibble::tribble(
+  ~group1, ~group2,   ~p.adj,
+  "Control",     "Relative", .009)
+
+
+phq_plot_1 <- ggboxplot(traits_df, x = "group_1", y = "phq_total", fill = "group_1",width = .4) + 
+  stat_pvalue_manual(stat.test, y.position = 18, step.increase = 0.1, label = "p.adj", hide.ns = TRUE) +
+  labs(x = "Group", y = "PHQ-9 total score") + theme_classic() +
+  theme(axis.title.x = element_text(vjust = 0, size = 14), axis.title.y = element_text(vjust = 2, size = 14)) +
+  theme(axis.text = element_text(size = 12),
+        axis.text.x = element_text()) + theme(legend.position = "none") 
+
+phq_plot_1 + geom_jitter(alpha = .25, width = .2) + geom_violin(aes(fill = group_1), size = 1, alpha = .2, adjust = 1.5) 
+
+## Run chi-square to compare the categorical PHQ variable 
+##create new phq variable for scores >= 10
+traits_df$phq_cat3 <- ifelse(traits_df$phq_total >= 10, c("abnormal"), c("normal"))
+chisq.test(traits_df$group_1, traits_df$phq_cat3)
+
+## Compare FALS, SALS and Controls
+##check homogeneity of variance
+leveneTest(traits_df$phq_total, traits_df$group_2, center = median) #non sig
+
+##Run anova 
+phq_anova1 <-aov(phq_total ~ group_2, data = traits_df)
+summary(phq_anova1)
+
+##check assumptions
+plot(phq_anova1) ## Moderate skew on qq plot
+
+##Run Kruskal Wallis test
+phq_kw1 <- kruskal.test(phq_total ~ group_2, data = traits_df)
+post_hoc1 <- kruskalmc(phq_total ~ group_2, data = traits_df)
+
+##Plot differences
+
+#Make tibble of adjusted p-values
+stat.test <- tibble::tribble(
+  ~group1, ~group2,   ~p.adj,
+  "Control",     "FALS", .05,
+  "Control",     "SALS", .10,
+  "FALS",     "SALS", .10)
+
+phq_plot_2 <- ggboxplot(traits_df, x = "group_2", y = "phq_total", fill = "group_2",width = .4) + 
+  stat_pvalue_manual(stat.test, y.position = 18, step.increase = 0.1, label = "p.adj", hide.ns = TRUE) +
+  labs(x = "Group", y = "PHQ-9 total score") + theme_classic() + 
+  stat_compare_means(method = "kruskal.test", label.x = 2, label.y = 20) +
+  theme(axis.title.x = element_text(vjust = 0, size = 14), axis.title.y = element_text(vjust = 2, size = 14)) +
+  theme(axis.text = element_text(size = 12),
+        axis.text.x = element_text()) + theme(legend.position = "none") 
+
+phq_plot_2 + geom_jitter(alpha = .25, width = .2) + geom_violin(aes(fill = group_2), size = 1, alpha = .2, adjust = 1.5) 
+
+##Compare FALS, SALS and controls on PHQ categories
+chisq.test(traits_df$group_2, traits_df$phq_cat3)
+
+##Compare C9+ and C9- relatives on phq score
+c9_phq_test1 <- t.test(phq_total ~ c9_status_2, data = traits_df)
+c9_phq_wtest1 <- wilcox.test(phq_total ~ c9_status_2, data = traits_df)
+
+##Check assumptions 
+by(traits_df$phq_total, traits_df$c9_status_2, hist) #Strong positive skew
+qplot(sample = c9pos_df$phq_total, stat="qq") #Moderate kurtosis
+qplot(sample = c9neg_df$phq_total, stat="qq") #Moderate kurtosis
+
+chisq.test(traits_df$c9_status_2, traits_df$phq_cat3)
+table(traits_df$c9_status_2, traits_df$phq_cat3)
+
+##Run a regression to control for age differences
+model1 <- lm(phq_total ~ age + group_1, traits_df)
+summary(model1)
+plot(model1)
+
+model2 <- lm(phq_total ~ age + group_2, traits_df)
+summary(model2)
+plot(model2)
+
+model3 <- lm(phq_total ~ age + c9_status_2, traits_df)
+summary(model3)
+plot(model3)
